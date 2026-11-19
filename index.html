@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>Mountain Check</title>
+  <meta name="description" content="Point your phone at the horizon to see which mountain is which, how tall it is and how far away.">
+  <meta name="theme-color" content="#0d141b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <video id="cam" playsinline muted autoplay></video>
+  <canvas id="ar" aria-label="Live view with mountain labels"></canvas>
+
+  <div id="status" role="status" aria-live="polite" hidden>
+    <span id="status-dot"></span>
+    <span id="status-text"></span>
+    <button id="status-retry" type="button" hidden>Retry</button>
+  </div>
+
+  <div id="calib" hidden>
+    <p><strong>Line up the amber skyline.</strong> Drag it until it sits on the real ridgeline. Use the zoom slider if peaks drift apart towards the edges.</p>
+    <label for="fov">Zoom match <output id="fov-out"></output></label>
+    <input id="fov" type="range" min="40" max="90" step="0.5">
+    <div class="row">
+      <button id="calib-reset" type="button" class="ghost">Reset</button>
+      <button id="calib-done" type="button" class="primary">Done</button>
+    </div>
+  </div>
+
+  <nav id="bar" hidden>
+    <button id="btn-calib" type="button" class="round" aria-label="Calibrate compass">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg>
+      <span>Align</span>
+    </button>
+    <button id="btn-shot" type="button" aria-label="Take photo"><i></i></button>
+    <button id="btn-settings" type="button" class="round" aria-label="Settings">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>
+      <span>Settings</span>
+    </button>
+  </nav>
+
+  <section id="sheet" class="panel" hidden aria-labelledby="sheet-name">
+    <button class="close" type="button" data-close aria-label="Close">×</button>
+    <p class="eyebrow" id="sheet-kind">Summit</p>
+    <h2 id="sheet-name"></h2>
+    <p class="big" id="sheet-height"></p>
+    <dl id="sheet-facts"></dl>
+    <div class="links" id="sheet-links"></div>
+  </section>
+
+  <section id="settings" class="panel" hidden aria-labelledby="settings-title">
+    <button class="close" type="button" data-close aria-label="Close">×</button>
+    <h2 id="settings-title">Settings</h2>
+    <div class="field">
+      <span class="label">Units</span>
+      <div class="seg" id="units">
+        <button type="button" data-v="metric">Metres, km</button>
+        <button type="button" data-v="imperial">Feet, miles</button>
+      </div>
+    </div>
+    <div class="field">
+      <span class="label">Look as far as</span>
+      <div class="seg" id="radius">
+        <button type="button" data-v="50000">50 km</button>
+        <button type="button" data-v="100000">100 km</button>
+        <button type="button" data-v="200000">200 km</button>
+      </div>
+    </div>
+    <label class="field check"><input type="checkbox" id="skyline"> <span>Trace the skyline over the camera</span></label>
+    <div class="field">
+      <label class="label" for="place">Viewpoint</label>
+      <select id="place">
+        <option value="gps">My current location</option>
+        <option value="45.9836,7.7846">Gornergrat, Switzerland</option>
+        <option value="47.6295,-122.3599">Kerry Park, Seattle</option>
+        <option value="51.1444,-115.5745">Sulphur Mountain, Banff</option>
+        <option value="custom">Other coordinates…</option>
+      </select>
+      <div id="custom" class="row" hidden>
+        <input id="custom-lat" inputmode="decimal" placeholder="Latitude" aria-label="Latitude">
+        <input id="custom-lon" inputmode="decimal" placeholder="Longitude" aria-label="Longitude">
+        <button id="custom-go" type="button" class="primary">Go</button>
+      </div>
+    </div>
+    <p class="fine">Peak names from OpenStreetMap contributors. Terrain from Mapzen terrain tiles on AWS Open Data. Areas you visit are saved on this phone for use without signal.</p>
+  </section>
+
+  <section id="start">
+    <div class="start-inner">
+      <svg class="mark" viewBox="0 0 120 60" aria-hidden="true"><path d="M2 58 L34 18 L46 32 L66 4 L92 38 L102 30 L118 58" /></svg>
+      <h1>Mountain Check</h1>
+      <p>Point your phone at the horizon. Each peak you can actually see gets its name, height and distance.</p>
+      <button id="go" type="button" class="primary">Start scanning</button>
+      <button id="demo" type="button" class="ghost">Try a sample viewpoint</button>
+      <p class="fine" id="start-note">Uses your camera, location and compass. Nothing leaves your phone except the lookup of nearby peaks and terrain.</p>
+    </div>
+  </section>
+
+  <div id="toast" role="status" hidden></div>
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>
