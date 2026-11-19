@@ -44,7 +44,7 @@ the zoom slider. The correction is remembered.
 
 | Part | File | Notes |
 | --- | --- | --- |
-| Peak names | `src/peaks.js` | OpenStreetMap via the Overpass API. All named summits within 100 km; beyond that only those with a Wikidata entry. |
+| Peak names | `src/peaks.js` | OpenStreetMap via the Overpass API. All named summits within 50 km; beyond that only those with a Wikidata entry. The nearest 25 km load first. |
 | Terrain | `src/dem.js` | Terrarium elevation tiles (Mapzen, AWS Open Data). Fine grid near you, coarser grid out to the range. |
 | Sightlines | `src/visibility.js` | Walks the terrain between you and each summit, allowing for earth curvature and refraction. Also computes the skyline in every direction. |
 | Sensors | `src/sensors.js` | Compass heading, pitch and roll, GPS, camera. |

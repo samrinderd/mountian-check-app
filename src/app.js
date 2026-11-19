@@ -42,6 +42,7 @@ const state = {
   loadGen: 0,
   computeGen: 0,
   retryAfter: 0,
+  loadingMore: false,
   startedAt: 0,
 };
 const orientation = new Orientation();
@@ -89,24 +90,46 @@ function onLocation() {
 async function reload(loc) {
   const gen = ++state.loadGen;
   const radius = settings.radius;
+  const current = () => gen === state.loadGen;
   state.loaded = { lat: loc.lat, lon: loc.lon, radius };
   state.obs = null;
+  state.loadingMore = false;
   setStatus('busy', 'Loading peaks and terrain…');
-  const [pk, tr] = await Promise.allSettled([
-    loadPeaks(loc.lat, loc.lon, radius),
-    loadTerrain(loc.lat, loc.lon, radius, (done, total) => {
-      if (gen === state.loadGen) setStatus('busy', `Loading terrain ${done} of ${total}…`);
-    }),
-  ]);
-  if (gen !== state.loadGen) return;
-  if (pk.status === 'rejected') {
+
+  let peaksSettled = false;
+  const terrainP = loadTerrain(loc.lat, loc.lon, radius, (done, total) => {
+    if (current() && !peaksSettled && !state.loadingMore) setStatus('busy', `Loading terrain ${done} of ${total}…`);
+  }).catch(() => null);
+  terrainP.then(() => {
+    if (current() && !peaksSettled && !state.loadingMore) setStatus('busy', 'Looking up peak names…');
+  });
+
+  let info;
+  try {
+    info = await loadPeaks(loc.lat, loc.lon, radius, async (nearby) => {
+      // The nearest peaks arrived first: show them while the rest loads.
+      const terrain = await terrainP;
+      if (!current() || peaksSettled) return;
+      state.loadingMore = true;
+      state.peaksInfo = { peaks: nearby, source: 'live', time: Date.now() };
+      state.terrain = terrain;
+      await recompute(location_() ?? loc);
+    });
+  } catch {
+    peaksSettled = true;
+    if (!current()) return;
+    state.loadingMore = false;
     state.loaded = null;
     state.retryAfter = Date.now() + 60000;
-    setStatus('error', 'Could not load nearby peaks. Check your signal.', true);
+    setStatus('error', 'Could not look up nearby peaks. The map service may be busy, or your signal weak.', true);
     return;
   }
-  state.peaksInfo = pk.value;
-  state.terrain = tr.status === 'fulfilled' ? tr.value : null;
+  peaksSettled = true;
+  const terrain = await terrainP;
+  if (!current()) return;
+  state.loadingMore = false;
+  state.peaksInfo = info;
+  state.terrain = terrain;
   await recompute(location_() ?? loc);
 }
 
@@ -121,7 +144,7 @@ async function recompute(loc) {
     h: sample ? observerHeight(sample, loc.lat, loc.lon, loc.altitude) : (loc.altitude ?? 0),
   };
   state.obs ??= obs; // stops repeat triggers while this run is in progress
-  setStatus('busy', 'Checking sightlines…');
+  if (!state.visible.length || !state.loadingMore) setStatus('busy', 'Checking sightlines…');
   const steps = sample ? rayDistances(radius, Math.max(30, state.terrain.nearStep), state.terrain.farStep) : [];
   const out = [];
   const peaks = state.peaksInfo.peaks;
@@ -147,6 +170,11 @@ function refreshStatus() {
   if (!state.obs || !state.peaksInfo) return;
   const parts = [`${state.visible.length} ${state.visible.length === 1 ? 'peak' : 'peaks'} in sight`];
   let kind = 'ok';
+  if (state.loadingMore) parts.push('loading distant peaks…');
+  if (state.peaksInfo.source === 'partial') {
+    parts.push('nearby peaks only, distant lookup failed');
+    kind = 'warn';
+  }
   if (!state.manual && state.fix) {
     const acc = settings.units === 'imperial' ? `${Math.round(state.fix.accuracy * 3.28084)} ft` : `${Math.round(state.fix.accuracy)} m`;
     parts.push(`GPS ±${acc}`);

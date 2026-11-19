@@ -1,6 +1,6 @@
 // Keeps the app itself available without signal. Peak and terrain data are
 // cached separately by the page (see src/dem.js and src/peaks.js).
-const SHELL = 'mountain-check-shell-v2';
+const SHELL = 'mountain-check-shell-v3';
 const FILES = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest', 'icon.svg',
   'src/app.js', 'src/geo.js', 'src/dem.js', 'src/peaks.js', 'src/visibility.js', 'src/sensors.js', 'src/render.js',

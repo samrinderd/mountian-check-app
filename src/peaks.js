@@ -13,14 +13,17 @@ const INDEX_KEY = 'mountain-check.areas';
 const FRESH_MS = 30 * 24 * 3600 * 1000;
 const MAX_AREAS = 8;
 // Every named summit inside this distance; beyond it only notable ones (those
-// with a Wikidata entry), which keeps a 200 km request to a sensible size.
-const FULL_DETAIL_RADIUS = 100000;
+// with a Wikidata entry). Mountain regions hold tens of thousands of named
+// tops, and asking for all of them out to 100 km makes the lookup very slow.
+const FULL_DETAIL_RADIUS = 50000;
+// A first, small lookup so labels appear quickly while the full one runs.
+const QUICK_RADIUS = 25000;
 
-export function buildQuery(lat, lon, radius) {
+export function buildQuery(lat, lon, radius, serverTimeout = 50) {
   const at = `${lat.toFixed(4)},${lon.toFixed(4)}`;
   const kind = 'node["natural"~"^(peak|volcano)$"]["name"]';
   const inner = Math.min(radius, FULL_DETAIL_RADIUS);
-  let q = `[out:json][timeout:60];(${kind}(around:${inner},${at});`;
+  let q = `[out:json][timeout:${serverTimeout}];(${kind}(around:${inner},${at});`;
   if (radius > inner) q += `${kind}["wikidata"](around:${radius},${at});`;
   return q + ');out body qt;';
 }
@@ -93,52 +96,69 @@ function findArea(lat, lon, radius, maxOffsetFraction, maxAge) {
   return best;
 }
 
-async function fetchOverpass(query) {
-  let lastError;
-  for (const url of ENDPOINTS) {
-    const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), 45000);
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        body: 'data=' + encodeURIComponent(query),
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        signal: ctl.signal,
-      });
-      if (!res.ok) throw new Error(`Overpass ${res.status}`);
-      const json = await res.json();
-      return parseElements(json.elements);
-    } catch (err) {
-      lastError = err;
-    } finally {
-      clearTimeout(timer);
-    }
+/** Asks every mirror at once and takes the first good answer. */
+async function fetchOverpass(query, timeoutMs) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), timeoutMs);
+  const ask = async (url) => {
+    const res = await fetch(url, {
+      method: 'POST',
+      body: 'data=' + encodeURIComponent(query),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      signal: ctl.signal,
+    });
+    if (!res.ok) throw new Error(`Overpass ${res.status}`);
+    const json = await res.json();
+    // A "remark" means the server gave up part-way (timeout or memory).
+    if (json.remark && !json.elements?.length) throw new Error(json.remark);
+    return parseElements(json.elements);
+  };
+  try {
+    return await Promise.any(ENDPOINTS.map(ask));
+  } catch (err) {
+    throw err.errors?.[0] ?? err;
+  } finally {
+    clearTimeout(timer);
+    ctl.abort(); // stop the slower mirrors
   }
-  throw lastError ?? new Error('Peak lookup failed');
 }
 
 /**
  * Peaks around a point. Uses a recent nearby download when there is one,
  * otherwise asks OpenStreetMap, and falls back to any older saved area that
  * still covers the spot when the network is unavailable.
- * Returns { peaks, source: 'live' | 'saved' | 'offline', time, center }.
+ *
+ * A live lookup runs in two parts: a small one for the nearest peaks, handed
+ * to `onPartial` as soon as it lands, and the full one for the whole range.
+ * Returns { peaks, source: 'live' | 'saved' | 'offline' | 'partial', time }.
+ * 'partial' means only the nearby lookup succeeded.
  */
-export async function loadPeaks(lat, lon, radius) {
+export async function loadPeaks(lat, lon, radius, onPartial) {
   const recent = findArea(lat, lon, radius, 0.12, FRESH_MS);
   if (recent) {
     const peaks = await readArea(recent);
-    if (peaks) return { peaks, source: 'saved', time: recent.time, center: recent };
+    if (peaks) return { peaks, source: 'saved', time: recent.time };
   }
+  let done = false;
+  const quick = radius > QUICK_RADIUS
+    ? fetchOverpass(buildQuery(lat, lon, QUICK_RADIUS, 20), 25000)
+      .then((peaks) => { if (!done) onPartial?.(peaks); return peaks; })
+      .catch(() => null)
+    : Promise.resolve(null);
   try {
-    const peaks = await fetchOverpass(buildQuery(lat, lon, radius));
+    const peaks = await fetchOverpass(buildQuery(lat, lon, radius), 60000);
+    done = true;
     saveArea(lat, lon, radius, peaks);
-    return { peaks, source: 'live', time: Date.now(), center: { lat, lon } };
+    return { peaks, source: 'live', time: Date.now() };
   } catch (err) {
+    done = true;
     const old = findArea(lat, lon, radius * 0.5, 0.6, Infinity);
     if (old) {
       const peaks = await readArea(old);
-      if (peaks) return { peaks, source: 'offline', time: old.time, center: old };
+      if (peaks) return { peaks, source: 'offline', time: old.time };
     }
+    const near = await quick;
+    if (near) return { peaks: near, source: 'partial', time: Date.now() };
     throw err;
   }
 }

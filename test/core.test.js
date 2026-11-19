@@ -94,7 +94,7 @@ test('peaks without terrain data are only hidden by curvature', () => {
 
 test('Overpass query and parsing', () => {
   const q = buildQuery(45.98361, 7.78461, 200000);
-  assert.match(q, /around:100000,45\.9836,7\.7846/);
+  assert.match(q, /around:50000,45\.9836,7\.7846/);
   assert.match(q, /\["wikidata"\]\(around:200000/);
   assert.doesNotMatch(buildQuery(45, 7, 50000), /wikidata/);
   const peaks = parseElements([
