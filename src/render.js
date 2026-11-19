@@ -57,8 +57,9 @@ function roundRect(ctx, x, y, w, h, r) {
 /**
  * view:  { heading, pitch, roll, f }            camera pose, f in CSS pixels
  * scene: { visible, horizon, units }            assessed peaks sorted by score
- * opts:  { backdrop, skyline, top, selectedId } top = pixels reserved up top
- * Returns tap targets: [{ x, y, w, h, item }].
+ * opts:  { backdrop, skyline, top, plates, glassSource }
+ * Returns { hits, labels, readout }: tap targets, label boxes for the page
+ * to place glass plates on, and the heading text.
  */
 export function drawScene(ctx, w, h, view, scene, opts = {}) {
   const project = makeCamera({ ...view, cx: w / 2, cy: h / 2 });
@@ -120,7 +121,7 @@ export function drawScene(ctx, w, h, view, scene, opts = {}) {
     let box = null;
     if (labels.length < maxLabels) {
       const sub = peakSubtitle(a, scene.units);
-      const bw = Math.ceil(Math.max(textWidth(ctx, NAME_FONT, a.peak.name), textWidth(ctx, SUB_FONT, sub))) + 20;
+      const bw = Math.ceil(Math.max(textWidth(ctx, NAME_FONT, a.peak.name), textWidth(ctx, SUB_FONT, sub))) + 28;
       const bx = Math.max(6, Math.min(w - bw - 6, p.x - bw / 2));
       if (p.x > 6 + 10 && p.x < w - 16) {
         for (let k = 0; k < 5 && !box; k++) {
@@ -153,27 +154,77 @@ export function drawScene(ctx, w, h, view, scene, opts = {}) {
     ctx.stroke();
   }
   for (const b of labels) {
-    const selected = opts.selectedId === b.a.peak.id;
     drawMarker(ctx, b.p.x, b.p.y, 5, COLORS.accent);
-    roundRect(ctx, b.x, b.y, b.w, b.h, 8);
-    ctx.fillStyle = COLORS.plate;
-    ctx.fill();
-    ctx.strokeStyle = selected ? COLORS.accent : COLORS.plateEdge;
-    ctx.lineWidth = selected ? 2 : 1;
-    ctx.stroke();
+    hits.push({ x: b.x, y: b.y, w: b.w, h: b.h + 24, item: b.a });
+    // Live, the plates are real glass elements placed by the page; in a photo
+    // they are painted here.
+    if (opts.plates === false) continue;
+    glassPlate(ctx, b.x, b.y, b.w, b.h, PLATE_RADIUS, opts.glassSource);
     ctx.textBaseline = 'alphabetic';
     ctx.textAlign = 'left';
     ctx.font = NAME_FONT;
     ctx.fillStyle = COLORS.text;
-    ctx.fillText(b.a.peak.name, b.x + 10, b.y + 18);
+    ctx.fillText(b.a.peak.name, b.x + 13, b.y + 18);
     ctx.font = SUB_FONT;
     ctx.fillStyle = COLORS.sub;
-    ctx.fillText(b.sub, b.x + 10, b.y + 34);
-    hits.push({ x: b.x, y: b.y, w: b.w, h: b.h + 24, item: b.a });
+    ctx.fillText(b.sub, b.x + 13, b.y + 34);
   }
 
-  drawCompass(ctx, w, top, view);
-  return hits;
+  const readout = drawCompass(ctx, w, top, view, opts.plates !== false, opts.glassSource);
+  return {
+    hits,
+    readout,
+    labels: labels.map((b) => ({ id: b.a.peak.id, x: b.x, y: b.y, w: b.w, h: b.h, name: b.a.peak.name, sub: b.sub })),
+  };
+}
+
+export const PLATE_RADIUS = 15;
+let canFilter;
+
+/**
+ * Paints a frosted-glass plate: a blurred copy of whatever is behind it (when
+ * the browser can filter canvas drawing), a dark tint, a soft top highlight
+ * and a bright rim.
+ */
+function glassPlate(ctx, x, y, w, h, r, source) {
+  canFilter ??= typeof ctx.filter === 'string';
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.3)';
+  ctx.shadowBlur = 14;
+  ctx.shadowOffsetY = 4;
+  roundRect(ctx, x, y, w, h, r);
+  ctx.fillStyle = canFilter && source ? 'rgba(18,24,32,0.5)' : 'rgba(18,24,32,0.62)';
+  ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  roundRect(ctx, x, y, w, h, r);
+  ctx.clip();
+  if (canFilter && source) {
+    const k = ctx.getTransform().a; // source is this canvas, in device pixels
+    const pad = 24;
+    ctx.filter = 'blur(12px) saturate(170%)';
+    ctx.drawImage(source, (x - pad) * k, (y - pad) * k, (w + pad * 2) * k, (h + pad * 2) * k, x - pad, y - pad, w + pad * 2, h + pad * 2);
+    ctx.filter = 'none';
+    ctx.fillStyle = 'rgba(18,24,32,0.36)';
+    ctx.fillRect(x, y, w, h);
+  }
+  const sheen = ctx.createLinearGradient(0, y, 0, y + h);
+  sheen.addColorStop(0, 'rgba(255,255,255,0.22)');
+  sheen.addColorStop(0.45, 'rgba(255,255,255,0.04)');
+  sheen.addColorStop(1, 'rgba(255,255,255,0.08)');
+  ctx.fillStyle = sheen;
+  ctx.fillRect(x, y, w, h);
+  ctx.restore();
+
+  const rim = ctx.createLinearGradient(0, y, 0, y + h);
+  rim.addColorStop(0, 'rgba(255,255,255,0.6)');
+  rim.addColorStop(0.5, 'rgba(255,255,255,0.14)');
+  rim.addColorStop(1, 'rgba(255,255,255,0.3)');
+  roundRect(ctx, x + 0.5, y + 0.5, w - 1, h - 1, r);
+  ctx.strokeStyle = rim;
+  ctx.lineWidth = 1;
+  ctx.stroke();
 }
 
 function drawMarker(ctx, x, y, r, color) {
@@ -198,10 +249,10 @@ function drawSky(ctx, w, h, project, view) {
   ctx.fillRect(0, 0, w, h);
 }
 
-function drawCompass(ctx, w, top, view) {
+function drawCompass(ctx, w, top, view, paintReadout, glassSource) {
   const bandH = 38;
   const g = ctx.createLinearGradient(0, 0, 0, top + bandH + 14);
-  g.addColorStop(0, 'rgba(8,13,18,0.75)');
+  g.addColorStop(0, 'rgba(8,13,18,0.5)');
   g.addColorStop(1, 'rgba(8,13,18,0)');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, w, top + bandH + 14);
@@ -210,6 +261,9 @@ function drawCompass(ctx, w, top, view) {
   const first = Math.ceil((view.heading - span) / 5) * 5;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.6)';
+  ctx.shadowBlur = 4;
   for (let d = first; d <= view.heading + span; d += 5) {
     const x = w / 2 + view.f * Math.tan(((d - view.heading) * Math.PI) / 180);
     const deg = wrap360(d);
@@ -222,6 +276,7 @@ function drawCompass(ctx, w, top, view) {
       ctx.fillText(major ? cardinal(deg) : String(deg), x, top + 30);
     }
   }
+  ctx.restore();
   // Centre pointer and readout.
   ctx.fillStyle = COLORS.accent;
   ctx.beginPath();
@@ -231,11 +286,12 @@ function drawCompass(ctx, w, top, view) {
   ctx.closePath();
   ctx.fill();
   const label = `${Math.round(wrap360(view.heading)) % 360}° ${cardinal(view.heading)}`;
-  ctx.font = `600 12px ${FONT}`;
-  const lw = ctx.measureText(label).width + 16;
-  roundRect(ctx, w / 2 - lw / 2, top + 37, lw, 20, 10);
-  ctx.fillStyle = COLORS.plate;
-  ctx.fill();
-  ctx.fillStyle = '#fff';
-  ctx.fillText(label, w / 2, top + 51);
+  if (paintReadout) {
+    ctx.font = `600 13px ${FONT}`;
+    const lw = ctx.measureText(label).width + 24;
+    glassPlate(ctx, w / 2 - lw / 2, top + 36, lw, 26, 13, glassSource);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(label, w / 2, top + 53.5);
+  }
+  return label;
 }

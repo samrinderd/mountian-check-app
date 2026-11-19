@@ -16,14 +16,16 @@
 <body>
   <video id="cam" playsinline muted autoplay></video>
   <canvas id="ar" aria-label="Live view with mountain labels"></canvas>
+  <div id="labels" aria-hidden="true"></div>
+  <div id="heading" class="glass" hidden></div>
 
-  <div id="status" role="status" aria-live="polite" hidden>
+  <div id="status" class="glass" role="status" aria-live="polite" hidden>
     <span id="status-dot"></span>
     <span id="status-text"></span>
     <button id="status-retry" type="button" hidden>Retry</button>
   </div>
 
-  <div id="calib" hidden>
+  <div id="calib" class="glass" hidden>
     <p><strong>Line up the amber skyline.</strong> Drag it until it sits on the real ridgeline. Use the zoom slider if peaks drift apart towards the edges.</p>
     <label for="fov">Zoom match <output id="fov-out"></output></label>
     <input id="fov" type="range" min="40" max="90" step="0.5">
@@ -45,7 +47,7 @@
     </button>
   </nav>
 
-  <section id="sheet" class="panel" hidden aria-labelledby="sheet-name">
+  <section id="sheet" class="panel glass" hidden aria-labelledby="sheet-name">
     <button class="close" type="button" data-close aria-label="Close">×</button>
     <p class="eyebrow" id="sheet-kind">Summit</p>
     <h2 id="sheet-name"></h2>
@@ -54,7 +56,7 @@
     <div class="links" id="sheet-links"></div>
   </section>
 
-  <section id="settings" class="panel" hidden aria-labelledby="settings-title">
+  <section id="settings" class="panel glass" hidden aria-labelledby="settings-title">
     <button class="close" type="button" data-close aria-label="Close">×</button>
     <h2 id="settings-title">Settings</h2>
     <div class="field">
@@ -92,8 +94,21 @@
   </section>
 
   <section id="start">
-    <div class="start-inner">
-      <svg class="mark" viewBox="0 0 120 60" aria-hidden="true"><path d="M2 58 L34 18 L46 32 L66 4 L92 38 L102 30 L118 58" /></svg>
+    <svg class="scene" viewBox="0 0 400 800" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
+      <defs>
+        <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#0f2740"/><stop offset="0.25" stop-color="#3f6f95"/><stop offset="0.45" stop-color="#f0b98c"/><stop offset="0.6" stop-color="#f6d9b0"/>
+        </linearGradient>
+      </defs>
+      <rect width="400" height="800" fill="url(#sky)"/>
+      <g transform="translate(0 -230)">
+        <circle cx="292" cy="470" r="46" fill="#ffe6c2" opacity="0.9"/>
+        <path d="M0 560 L50 500 L86 532 L140 440 L176 486 L214 452 L262 520 L310 468 L352 512 L400 470 V1100 H0Z" fill="#6f86a3"/>
+        <path d="M0 640 L44 590 L96 628 L150 548 L206 612 L250 574 L304 640 L356 586 L400 622 V1100 H0Z" fill="#3f5874"/>
+        <path d="M0 720 L60 664 L112 702 L170 646 L236 710 L290 672 L346 716 L400 684 V1100 H0Z" fill="#1c2c40"/>
+      </g>
+    </svg>
+    <div class="start-inner glass">
       <h1>Mountain Check</h1>
       <p>Point your phone at the horizon. Each peak you can actually see gets its name, height and distance.</p>
       <button id="go" type="button" class="primary">Start scanning</button>
@@ -102,7 +117,7 @@
     </div>
   </section>
 
-  <div id="toast" role="status" hidden></div>
+  <div id="toast" class="glass" role="status" hidden></div>
   <script type="module" src="src/app.js"></script>
 </body>
 </html>

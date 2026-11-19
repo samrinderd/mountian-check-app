@@ -210,7 +210,6 @@ function sceneOptions() {
     backdrop: !state.camera,
     skyline: state.calibrating || (settings.skyline && state.camera),
     top: safeTop,
-    selectedId: state.selected?.peak.id,
   };
 }
 
@@ -220,8 +219,37 @@ function frame() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
   state.view = currentView(w, h);
-  state.hits = drawScene(ctx, w, h, state.view, { visible: state.visible, horizon: state.horizon, units: settings.units }, sceneOptions());
+  const drawn = drawScene(ctx, w, h, state.view, { visible: state.visible, horizon: state.horizon, units: settings.units },
+    { ...sceneOptions(), plates: false });
+  state.hits = drawn.hits;
+  placeLabels(drawn.labels);
+  if (headingEl.textContent !== drawn.readout) headingEl.textContent = drawn.readout;
   requestAnimationFrame(frame);
+}
+
+// Label plates are real elements so the camera image blurs through them.
+const labelLayer = $('labels'), headingEl = $('heading');
+const labelPool = [];
+function placeLabels(labels) {
+  while (labelPool.length < labels.length) {
+    const el = document.createElement('div');
+    el.className = 'peak glass';
+    el.append(document.createElement('b'), document.createElement('span'));
+    labelLayer.append(el);
+    labelPool.push(el);
+  }
+  const selectedId = state.selected?.peak.id;
+  labelPool.forEach((el, i) => {
+    const l = labels[i];
+    if (!l) { if (!el.hidden) el.hidden = true; return; }
+    if (el.hidden) el.hidden = false;
+    el.style.transform = `translate3d(${l.x.toFixed(1)}px, ${l.y.toFixed(1)}px, 0)`;
+    if (el._w !== l.w) { el.style.width = `${l.w}px`; el._w = l.w; }
+    if (el._name !== l.name) { el.firstChild.textContent = l.name; el._name = l.name; }
+    if (el._sub !== l.sub) { el.lastChild.textContent = l.sub; el._sub = l.sub; }
+    const sel = l.id === selectedId;
+    if (el._sel !== sel) { el.classList.toggle('selected', sel); el._sel = sel; }
+  });
 }
 
 // --- Touch: tap a label, drag to look around or to calibrate -------------------------
@@ -325,7 +353,7 @@ async function capture() {
   }
   c.scale(s, s);
   drawScene(c, w, h, state.view, { visible: state.visible, horizon: state.horizon, units: settings.units },
-    { ...sceneOptions(), skyline: false, selectedId: null });
+    { ...sceneOptions(), skyline: false, plates: true, glassSource: hasVideo ? out : null });
 
   // Caption: where the photo was taken from and which way it faces.
   const loc = state.obs ?? location_();
@@ -500,6 +528,7 @@ async function start(sample) {
   }
   $('start').hidden = true;
   $('bar').hidden = false;
+  $('heading').hidden = false;
   requestAnimationFrame(frame);
   setInterval(() => { if ($('status').dataset.state !== 'busy' && $('status').dataset.state !== 'error') refreshStatus(); }, 2000);
 }
